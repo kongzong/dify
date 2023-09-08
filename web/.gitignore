@@ -45,6 +45,7 @@ package-lock.json
 .pnp.loader.mjs
 .yarn/
 .yarnrc.yml
+.yarn.lock
 
 # pmpm
 pnpm-lock.yaml
