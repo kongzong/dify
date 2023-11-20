@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import type { ModelModeType } from '@/types/app'
 
 export type FormValue = Record<string, string>
 
@@ -42,6 +43,9 @@ export enum ProviderEnum {
   'xinference' = 'xinference',
   'openllm' = 'openllm',
   'localai' = 'localai',
+  'zhipuai' = 'zhipuai',
+  'baichuan' = 'baichuan',
+  'cohere' = 'cohere',
 }
 
 export type ProviderConfigItem = {
@@ -64,10 +68,12 @@ export enum ModelType {
   textGeneration = 'text-generation',
   embeddings = 'embeddings',
   speech2text = 'speech2text',
+  reranking = 'reranking',
 }
 
 export enum ModelFeature {
   agentThought = 'agent_thought',
+  vision = 'vision',
 }
 
 // backend defined model struct: /console/api/workspaces/current/models/model-type/:model_type
@@ -75,6 +81,7 @@ export type BackendModel = {
   model_name: string
   model_display_name: string // not always exist
   model_type: ModelType
+  model_mode: ModelModeType
   model_provider: {
     provider_name: ProviderEnum
     provider_type: PreferredProviderTypeEnum

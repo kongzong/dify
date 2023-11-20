@@ -6,10 +6,13 @@
   "tongyi",
   "spark",
   "wenxin",
+  "zhipuai",
+  "baichuan",
   "chatglm",
   "replicate",
   "huggingface_hub",
   "xinference",
   "openllm",
-  "localai"
+  "localai",
+  "cohere"
 ]

@@ -3,16 +3,20 @@ import logging
 import threading
 import time
 import uuid
-from typing import Generator, Union, Any
+from typing import Generator, Union, Any, Optional, List
 
 from flask import current_app, Flask
 from redis.client import PubSub
 from sqlalchemy import and_
 
 from core.completion import Completion
-from core.conversation_message_task import PubHandler, ConversationTaskStoppedException
-from core.model_providers.error import LLMBadRequestError, LLMAPIConnectionError, LLMAPIUnavailableError, LLMRateLimitError, \
+from core.conversation_message_task import PubHandler, ConversationTaskStoppedException, \
+    ConversationTaskInterruptException
+from core.file.message_file_parser import MessageFileParser
+from core.model_providers.error import LLMBadRequestError, LLMAPIConnectionError, LLMAPIUnavailableError, \
+    LLMRateLimitError, \
     LLMAuthorizationError, ProviderTokenNotInitError, QuotaExceededError, ModelCurrentlyNotSupportError
+from core.model_providers.models.entity.message import PromptMessageFile
 from extensions.ext_database import db
 from extensions.ext_redis import redis_client
 from models.model import Conversation, AppModelConfig, App, Account, EndUser, Message
@@ -27,14 +31,17 @@ from services.errors.message import MessageNotExistsError
 class CompletionService:
 
     @classmethod
-    def completion(cls, app_model: App, user: Union[Account | EndUser], args: Any,
+    def completion(cls, app_model: App, user: Union[Account, EndUser], args: Any,
                    from_source: str, streaming: bool = True,
-                   is_model_config_override: bool = False) -> Union[dict | Generator]:
+                   is_model_config_override: bool = False) -> Union[dict, Generator]:
         # is streaming mode
         inputs = args['inputs']
         query = args['query']
+        files = args['files'] if 'files' in args and args['files'] else []
+        auto_generate_name = args['auto_generate_name'] \
+            if 'auto_generate_name' in args else True
 
-        if not query:
+        if app_model.mode != 'completion' and not query:
             raise ValueError('query is required')
 
         query = query.replace('\x00', '')
@@ -95,6 +102,7 @@ class CompletionService:
 
                 app_model_config_model = app_model_config.model_dict
                 app_model_config_model['completion_params'] = completion_params
+                app_model_config.retriever_resource = json.dumps({'enabled': True})
 
                 app_model_config = app_model_config.copy()
                 app_model_config.model = json.dumps(app_model_config_model)
@@ -115,7 +123,8 @@ class CompletionService:
                 model_config = AppModelConfigService.validate_configuration(
                     tenant_id=app_model.tenant_id,
                     account=user,
-                    config=args['model_config']
+                    config=args['model_config'],
+                    mode=app_model.mode
                 )
 
                 app_model_config = AppModelConfig(
@@ -128,6 +137,14 @@ class CompletionService:
         # clean input by app_model_config form rules
         inputs = cls.get_cleaned_inputs(inputs, app_model_config)
 
+        # parse files
+        message_file_parser = MessageFileParser(tenant_id=app_model.tenant_id, app_id=app_model.id)
+        file_objs = message_file_parser.validate_and_transform_files_arg(
+            files,
+            app_model_config,
+            user
+        )
+
         generate_task_id = str(uuid.uuid4())
 
         pubsub = redis_client.pubsub()
@@ -138,20 +155,24 @@ class CompletionService:
         generate_worker_thread = threading.Thread(target=cls.generate_worker, kwargs={
             'flask_app': current_app._get_current_object(),
             'generate_task_id': generate_task_id,
-            'app_model': app_model,
-            'app_model_config': app_model_config,
+            'detached_app_model': app_model,
+            'app_model_config': app_model_config.copy(),
             'query': query,
             'inputs': inputs,
-            'user': user,
-            'conversation': conversation,
+            'files': file_objs,
+            'detached_user': user,
+            'detached_conversation': conversation,
             'streaming': streaming,
-            'is_model_config_override': is_model_config_override
+            'is_model_config_override': is_model_config_override,
+            'retriever_from': args['retriever_from'] if 'retriever_from' in args else 'dev',
+            'auto_generate_name': auto_generate_name
         })
 
         generate_worker_thread.start()
 
         # wait for 10 minutes to close the thread
-        cls.countdown_and_close(generate_worker_thread, pubsub, user, generate_task_id)
+        cls.countdown_and_close(current_app._get_current_object(), generate_worker_thread, pubsub, user,
+                                generate_task_id)
 
         return cls.compact_response(pubsub, streaming)
 
@@ -167,17 +188,24 @@ class CompletionService:
         return user
 
     @classmethod
-    def generate_worker(cls, flask_app: Flask, generate_task_id: str, app_model: App, app_model_config: AppModelConfig,
-                        query: str, inputs: dict, user: Union[Account, EndUser],
-                        conversation: Conversation, streaming: bool, is_model_config_override: bool):
+    def generate_worker(cls, flask_app: Flask, generate_task_id: str, detached_app_model: App,
+                        app_model_config: AppModelConfig,
+                        query: str, inputs: dict, files: List[PromptMessageFile],
+                        detached_user: Union[Account, EndUser],
+                        detached_conversation: Optional[Conversation], streaming: bool, is_model_config_override: bool,
+                        retriever_from: str = 'dev', auto_generate_name: bool = True):
         with flask_app.app_context():
+            # fixed the state of the model object when it detached from the original session
+            user = db.session.merge(detached_user)
+            app_model = db.session.merge(detached_app_model)
+
+            if detached_conversation:
+                conversation = db.session.merge(detached_conversation)
+            else:
+                conversation = None
+
             try:
-                if conversation:
-                    # fixed the state of the conversation object when it detached from the original session
-                    conversation = db.session.query(Conversation).filter_by(id=conversation.id).first()
-
                 # run
-
                 Completion.generate(
                     task_id=generate_task_id,
                     app=app_model,
@@ -185,45 +213,51 @@ class CompletionService:
                     query=query,
                     inputs=inputs,
                     user=user,
+                    files=files,
                     conversation=conversation,
                     streaming=streaming,
                     is_override=is_model_config_override,
+                    retriever_from=retriever_from,
+                    auto_generate_name=auto_generate_name
                 )
-            except ConversationTaskStoppedException:
+            except (ConversationTaskInterruptException, ConversationTaskStoppedException):
                 pass
-            except (LLMBadRequestError, LLMAPIConnectionError, LLMAPIUnavailableError,
+            except (ValueError, LLMBadRequestError, LLMAPIConnectionError, LLMAPIUnavailableError,
                     LLMRateLimitError, ProviderTokenNotInitError, QuotaExceededError,
                     ModelCurrentlyNotSupportError) as e:
-                db.session.rollback()
                 PubHandler.pub_error(user, generate_task_id, e)
             except LLMAuthorizationError:
-                db.session.rollback()
                 PubHandler.pub_error(user, generate_task_id, LLMAuthorizationError('Incorrect API key provided'))
             except Exception as e:
-                db.session.rollback()
                 logging.exception("Unknown Error in completion")
                 PubHandler.pub_error(user, generate_task_id, e)
+            finally:
+                db.session.commit()
 
     @classmethod
-    def countdown_and_close(cls, worker_thread, pubsub, user, generate_task_id) -> threading.Thread:
+    def countdown_and_close(cls, flask_app: Flask, worker_thread, pubsub, detached_user,
+                            generate_task_id) -> threading.Thread:
         # wait for 10 minutes to close the thread
         timeout = 600
 
         def close_pubsub():
-            sleep_iterations = 0
-            while sleep_iterations < timeout and worker_thread.is_alive():
-                if sleep_iterations > 0 and sleep_iterations % 10 == 0:
-                    PubHandler.ping(user, generate_task_id)
+            with flask_app.app_context():
+                user = db.session.merge(detached_user)
 
-                time.sleep(1)
-                sleep_iterations += 1
+                sleep_iterations = 0
+                while sleep_iterations < timeout and worker_thread.is_alive():
+                    if sleep_iterations > 0 and sleep_iterations % 10 == 0:
+                        PubHandler.ping(user, generate_task_id)
 
-            if worker_thread.is_alive():
-                PubHandler.stop(user, generate_task_id)
-                try:
-                    pubsub.close()
-                except:
-                    pass
+                    time.sleep(1)
+                    sleep_iterations += 1
+
+                if worker_thread.is_alive():
+                    PubHandler.stop(user, generate_task_id)
+                    try:
+                        pubsub.close()
+                    except Exception:
+                        pass
 
         countdown_thread = threading.Thread(target=close_pubsub)
         countdown_thread.start()
@@ -231,8 +265,9 @@ class CompletionService:
         return countdown_thread
 
     @classmethod
-    def generate_more_like_this(cls, app_model: App, user: Union[Account | EndUser],
-                                message_id: str, streaming: bool = True) -> Union[dict | Generator]:
+    def generate_more_like_this(cls, app_model: App, user: Union[Account, EndUser],
+                                message_id: str, streaming: bool = True,
+                                retriever_from: str = 'dev') -> Union[dict, Generator]:
         if not user:
             raise ValueError('user cannot be None')
 
@@ -254,14 +289,17 @@ class CompletionService:
             raise MoreLikeThisDisabledError()
 
         app_model_config = message.app_model_config
+        model_dict = app_model_config.model_dict
+        completion_params = model_dict.get('completion_params')
+        completion_params['temperature'] = 0.9
+        model_dict['completion_params'] = completion_params
+        app_model_config.model = json.dumps(model_dict)
 
-        if message.override_model_configs:
-            override_model_configs = json.loads(message.override_model_configs)
-            pre_prompt = override_model_configs.get("pre_prompt", '')
-        elif app_model_config:
-            pre_prompt = app_model_config.pre_prompt
-        else:
-            raise AppModelConfigBrokenError()
+        # parse files
+        message_file_parser = MessageFileParser(tenant_id=app_model.tenant_id, app_id=app_model.id)
+        file_objs = message_file_parser.transform_message_files(
+            message.files, app_model_config
+        )
 
         generate_task_id = str(uuid.uuid4())
 
@@ -270,53 +308,29 @@ class CompletionService:
 
         user = cls.get_real_user_instead_of_proxy_obj(user)
 
-        generate_worker_thread = threading.Thread(target=cls.generate_more_like_this_worker, kwargs={
+        generate_worker_thread = threading.Thread(target=cls.generate_worker, kwargs={
             'flask_app': current_app._get_current_object(),
             'generate_task_id': generate_task_id,
-            'app_model': app_model,
-            'app_model_config': app_model_config,
-            'message': message,
-            'pre_prompt': pre_prompt,
-            'user': user,
-            'streaming': streaming
+            'detached_app_model': app_model,
+            'app_model_config': app_model_config.copy(),
+            'query': message.query,
+            'inputs': message.inputs,
+            'files': file_objs,
+            'detached_user': user,
+            'detached_conversation': None,
+            'streaming': streaming,
+            'is_model_config_override': True,
+            'retriever_from': retriever_from,
+            'auto_generate_name': False
         })
 
         generate_worker_thread.start()
 
-        cls.countdown_and_close(generate_worker_thread, pubsub, user, generate_task_id)
+        # wait for 10 minutes to close the thread
+        cls.countdown_and_close(current_app._get_current_object(), generate_worker_thread, pubsub, user,
+                                generate_task_id)
 
         return cls.compact_response(pubsub, streaming)
-
-    @classmethod
-    def generate_more_like_this_worker(cls, flask_app: Flask, generate_task_id: str, app_model: App,
-                                       app_model_config: AppModelConfig, message: Message, pre_prompt: str,
-                                       user: Union[Account, EndUser], streaming: bool):
-        with flask_app.app_context():
-            try:
-                # run
-                Completion.generate_more_like_this(
-                    task_id=generate_task_id,
-                    app=app_model,
-                    user=user,
-                    message=message,
-                    pre_prompt=pre_prompt,
-                    app_model_config=app_model_config,
-                    streaming=streaming
-                )
-            except ConversationTaskStoppedException:
-                pass
-            except (LLMBadRequestError, LLMAPIConnectionError, LLMAPIUnavailableError,
-                    LLMRateLimitError, ProviderTokenNotInitError, QuotaExceededError,
-                    ModelCurrentlyNotSupportError) as e:
-                db.session.rollback()
-                PubHandler.pub_error(user, generate_task_id, e)
-            except LLMAuthorizationError:
-                db.session.rollback()
-                PubHandler.pub_error(user, generate_task_id, LLMAuthorizationError('Incorrect API key provided'))
-            except Exception as e:
-                db.session.rollback()
-                logging.exception("Unknown Error in completion")
-                PubHandler.pub_error(user, generate_task_id, e)
 
     @classmethod
     def get_cleaned_inputs(cls, user_inputs: dict, app_model_config: AppModelConfig):
@@ -347,8 +361,8 @@ class CompletionService:
                 if value not in options:
                     raise ValueError(f"{variable} in input form must be one of the following: {options}")
             else:
-                if 'max_length' in variable:
-                    max_length = variable['max_length']
+                if 'max_length' in input_config:
+                    max_length = input_config['max_length']
                     if len(value) > max_length:
                         raise ValueError(f'{variable} in input form must be less than {max_length} characters')
 
@@ -357,18 +371,22 @@ class CompletionService:
         return filtered_inputs
 
     @classmethod
-    def compact_response(cls, pubsub: PubSub, streaming: bool = False) -> Union[dict | Generator]:
+    def compact_response(cls, pubsub: PubSub, streaming: bool = False) -> Union[dict, Generator]:
         generate_channel = list(pubsub.channels.keys())[0].decode('utf-8')
         if not streaming:
             try:
+                message_result = {}
                 for message in pubsub.listen():
                     if message["type"] == "message":
                         result = message["data"].decode('utf-8')
                         result = json.loads(result)
                         if result.get('error'):
                             cls.handle_error(result)
-                        if 'data' in result:
-                            return cls.get_message_response_data(result.get('data'))
+                        if result['event'] == 'message' and 'data' in result:
+                            message_result['message'] = result.get('data')
+                        if result['event'] == 'message_end' and 'data' in result:
+                            message_result['message_end'] = result.get('data')
+                            return cls.get_blocking_message_response_data(message_result)
             except ValueError as e:
                 if e.args[0] != "I/O operation on closed file.":  # ignore this error
                     raise CompletionStoppedError()
@@ -376,6 +394,8 @@ class CompletionService:
                     logging.exception(e)
                     raise
             finally:
+                db.session.commit()
+
                 try:
                     pubsub.unsubscribe(generate_channel)
                 except ConnectionError:
@@ -394,13 +414,19 @@ class CompletionService:
                             if event == "end":
                                 logging.debug("{} finished".format(generate_channel))
                                 break
-
                             if event == 'message':
                                 yield "data: " + json.dumps(cls.get_message_response_data(result.get('data'))) + "\n\n"
+                            elif event == 'message_replace':
+                                yield "data: " + json.dumps(
+                                    cls.get_message_replace_response_data(result.get('data'))) + "\n\n"
                             elif event == 'chain':
                                 yield "data: " + json.dumps(cls.get_chain_response_data(result.get('data'))) + "\n\n"
                             elif event == 'agent_thought':
-                                yield "data: " + json.dumps(cls.get_agent_thought_response_data(result.get('data'))) + "\n\n"
+                                yield "data: " + json.dumps(
+                                    cls.get_agent_thought_response_data(result.get('data'))) + "\n\n"
+                            elif event == 'message_end':
+                                yield "data: " + json.dumps(
+                                    cls.get_message_end_data(result.get('data'))) + "\n\n"
                             elif event == 'ping':
                                 yield "event: ping\n\n"
                             else:
@@ -410,6 +436,8 @@ class CompletionService:
                         logging.exception(e)
                         raise
                 finally:
+                    db.session.commit()
+
                     try:
                         pubsub.unsubscribe(generate_channel)
                     except ConnectionError:
@@ -427,6 +455,56 @@ class CompletionService:
             'created_at': int(time.time())
         }
 
+        if data.get('mode') == 'chat':
+            response_data['conversation_id'] = data.get('conversation_id')
+
+        return response_data
+
+    @classmethod
+    def get_message_replace_response_data(cls, data: dict):
+        response_data = {
+            'event': 'message_replace',
+            'task_id': data.get('task_id'),
+            'id': data.get('message_id'),
+            'answer': data.get('text'),
+            'created_at': int(time.time())
+        }
+
+        if data.get('mode') == 'chat':
+            response_data['conversation_id'] = data.get('conversation_id')
+
+        return response_data
+
+    @classmethod
+    def get_blocking_message_response_data(cls, data: dict):
+        message = data.get('message')
+        response_data = {
+            'event': 'message',
+            'task_id': message.get('task_id'),
+            'id': message.get('message_id'),
+            'answer': message.get('text'),
+            'metadata': {},
+            'created_at': int(time.time())
+        }
+
+        if message.get('mode') == 'chat':
+            response_data['conversation_id'] = message.get('conversation_id')
+        if 'message_end' in data:
+            message_end = data.get('message_end')
+            if 'retriever_resources' in message_end:
+                response_data['metadata']['retriever_resources'] = message_end.get('retriever_resources')
+
+        return response_data
+
+    @classmethod
+    def get_message_end_data(cls, data: dict):
+        response_data = {
+            'event': 'message_end',
+            'task_id': data.get('task_id'),
+            'id': data.get('message_id')
+        }
+        if 'retriever_resources' in data:
+            response_data['retriever_resources'] = data.get('retriever_resources')
         if data.get('mode') == 'chat':
             response_data['conversation_id'] = data.get('conversation_id')
 
@@ -478,6 +556,7 @@ class CompletionService:
 
         # handle errors
         llm_errors = {
+            'ValueError': LLMBadRequestError,
             'LLMBadRequestError': LLMBadRequestError,
             'LLMAPIConnectionError': LLMAPIConnectionError,
             'LLMAPIUnavailableError': LLMAPIUnavailableError,

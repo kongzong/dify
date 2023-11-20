@@ -20,6 +20,7 @@ import {
   fetchChatList,
   fetchConversations,
   fetchSuggestedQuestions,
+  generationConversationName,
   pinConversation,
   sendChatMessage,
   stopChatMessageResponding,
@@ -199,6 +200,7 @@ const Main: FC<IMainProps> = () => {
 
   const [suggestedQuestionsAfterAnswerConfig, setSuggestedQuestionsAfterAnswerConfig] = useState<SuggestedQuestionsAfterAnswerConfig | null>(null)
   const [speechToTextConfig, setSpeechToTextConfig] = useState<SuggestedQuestionsAfterAnswerConfig | null>(null)
+  const [citationConfig, setCitationConfig] = useState<SuggestedQuestionsAfterAnswerConfig | null>(null)
 
   const [conversationIdChangeBecauseOfNew, setConversationIdChangeBecauseOfNew, getConversationIdChangeBecauseOfNew] = useGetState(false)
 
@@ -271,6 +273,7 @@ const Main: FC<IMainProps> = () => {
             content: item.answer,
             feedback: item.feedback,
             isAnswer: true,
+            citation: item.retriever_resources,
           })
         })
         setChatList(newChatList)
@@ -374,7 +377,7 @@ const Main: FC<IMainProps> = () => {
         const isNotNewConversation = allConversations.some(item => item.id === _conversationId)
         setAllConversationList(allConversations)
         // fetch new conversation info
-        const { user_input_form, opening_statement: introduction, suggested_questions_after_answer, speech_to_text }: any = appParams
+        const { user_input_form, opening_statement: introduction, suggested_questions_after_answer, speech_to_text, retriever_resource }: any = appParams
         const prompt_variables = userInputsFormToPromptVariables(user_input_form)
 
         setNewConversationInfo({
@@ -387,6 +390,7 @@ const Main: FC<IMainProps> = () => {
         } as PromptConfig)
         setSuggestedQuestionsAfterAnswerConfig(suggested_questions_after_answer)
         setSpeechToTextConfig(speech_to_text)
+        setCitationConfig(retriever_resource)
 
         if (isNotNewConversation)
           setCurrConversationId(_conversationId, APP_ID, false)
@@ -561,7 +565,11 @@ const Main: FC<IMainProps> = () => {
 
         if (getConversationIdChangeBecauseOfNew()) {
           const { data: allConversations }: any = await fetchAllConversations()
-          setAllConversationList(allConversations)
+          const newItem: any = await generationConversationName(allConversations[0].id)
+          const newAllConversations = produce(allConversations, (draft: any) => {
+            draft[0].name = newItem.name
+          })
+          setAllConversationList(newAllConversations as any)
           noticeUpdateList()
         }
         setConversationIdChangeBecauseOfNew(false)
@@ -589,6 +597,19 @@ const Main: FC<IMainProps> = () => {
           (draft) => {
             if (!draft.find(item => item.id === questionId))
               draft.push({ ...questionItem })
+            draft.push({ ...responseItem })
+          })
+        setChatList(newListWithAnswer)
+      },
+      onMessageEnd: (messageEnd) => {
+        responseItem.citation = messageEnd.retriever_resources
+
+        const newListWithAnswer = produce(
+          getChatList().filter(item => item.id !== responseItem.id && item.id !== placeholderAnswerId),
+          (draft) => {
+            if (!draft.find(item => item.id === questionId))
+              draft.push({ ...questionItem })
+
             draft.push({ ...responseItem })
           })
         setChatList(newListWithAnswer)
@@ -783,6 +804,7 @@ const Main: FC<IMainProps> = () => {
                 isShowSuggestion={doShowSuggestion}
                 suggestionList={suggestQuestions}
                 isShowSpeechToText={speechToTextConfig?.enabled}
+                isShowCitation={citationConfig?.enabled}
                 dataSets={dataSets}
               />
             </div>

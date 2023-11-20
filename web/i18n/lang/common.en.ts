@@ -29,6 +29,8 @@ const translation = {
     getForFree: 'Get for free',
     reload: 'Reload',
     ok: 'OK',
+    log: 'Log',
+    learnMore: 'Learn More',
   },
   placeholder: {
     input: 'Please enter',
@@ -57,15 +59,18 @@ const translation = {
         'Controls diversity via nucleus sampling: 0.5 means half of all likelihood-weighted options are considered.',
       presence_penalty: 'Presence penalty',
       presence_penaltyTip:
-        'How much to penalize new tokens based on whether they appear in the text so far. Increases the model\'s likelihood to talk about new topics.',
+        'How much to penalize new tokens based on whether they appear in the text so far.\nIncreases the model\'s likelihood to talk about new topics.',
       frequency_penalty: 'Frequency penalty',
       frequency_penaltyTip:
-        'How much to penalize new tokens based on their existing frequency in the text so far. Decreases the model\'s likelihood to repeat the same line verbatim.',
+        'How much to penalize new tokens based on their existing frequency in the text so far.\nDecreases the model\'s likelihood to repeat the same line verbatim.',
       max_tokens: 'Max token',
       max_tokensTip:
-        'Max tokens depending on the model. Prompt and completion share this limit. One token is roughly 1 English character.',
+        'Used to limit the maximum length of the reply, in tokens. \nLarger values may limit the space left for prompt words, chat logs, and data sets. \nIt is recommended to set it below two-thirds.',
       maxTokenSettingTip: 'Your max token setting is high, potentially limiting space for prompts, queries, and data. Consider setting it below 2/3.',
       setToCurrentModelMaxTokenTip: 'Max token is updated to the 80% maximum token of the current model {{maxToken}}.',
+      stop_sequences: 'Stop sequences',
+      stop_sequencesTip: 'Up to four sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence.',
+      stop_sequencesPlaceholder: 'Enter sequence and press Tab',
     },
     tone: {
       Creative: 'Creative',
@@ -73,6 +78,7 @@ const translation = {
       Precise: 'Precise',
       Custom: 'Custom',
     },
+    addMoreModel: 'Go to settings to add more models',
   },
   menus: {
     status: 'beta',
@@ -89,7 +95,7 @@ const translation = {
     settings: 'Settings',
     workspace: 'Workspace',
     createWorkspace: 'Create Workspace',
-    helpCenter: 'Help Document',
+    helpCenter: 'Help',
     about: 'About',
     logout: 'Log out',
   },
@@ -103,6 +109,7 @@ const translation = {
     provider: 'Model Provider',
     dataSource: 'Data Source',
     plugin: 'Plugins',
+    apiBasedExtension: 'API Extension',
   },
   account: {
     avatar: 'Avatar',
@@ -216,6 +223,8 @@ const translation = {
     },
   },
   modelProvider: {
+    systemModelSettings: 'System Model Settings',
+    systemModelSettingsLink: 'Why is it necessary to set up a system model?',
     selectModel: 'Select your model',
     setupModelFirst: 'Please set up your model first',
     systemReasoningModel: {
@@ -230,6 +239,10 @@ const translation = {
       key: 'Speech-to-Text Model',
       tip: 'Set the default model for speech-to-text input in conversation.',
     },
+    rerankModel: {
+      key: 'Rerank Model',
+      tip: 'Rerank model will reorder the candidate document list based on the semantic match with  user query, improving the results of semantic ranking',
+    },
     quota: 'Quota',
     searchModel: 'Search model',
     noModelFound: 'No model found for {{model}}',
@@ -237,6 +250,8 @@ const translation = {
     showMoreModelProvider: 'Show more model provider',
     selector: {
       tip: 'This model has been removed. Please add a model or select another model.',
+      emptyTip: 'No available models',
+      emptySetting: 'Please go to settings to configure',
     },
     card: {
       quota: 'QUOTA',
@@ -294,6 +309,34 @@ const translation = {
       keyFrom: 'Get your SerpAPI key from SerpAPI Account Page',
     },
   },
+  apiBasedExtension: {
+    title: 'API-based extensions provide centralized API management, simplifying configuration for easy use across Dify\'s applications.',
+    link: 'Learn how to develop your own API Extension.',
+    linkUrl: 'https://docs.dify.ai/advanced/api_based_extension',
+    add: 'Add API Extension',
+    selector: {
+      title: 'API Extension',
+      placeholder: 'Please select API-based extension',
+      manage: 'Manage API Extension',
+    },
+    modal: {
+      title: 'Add API Extension',
+      editTitle: 'Edit API Extension',
+      name: {
+        title: 'Name',
+        placeholder: 'Please enter the name',
+      },
+      apiEndpoint: {
+        title: 'API Endpoint',
+        placeholder: 'Please enter the API endpoint',
+      },
+      apiKey: {
+        title: 'API-key',
+        placeholder: 'Please enter the API-key',
+        lengthError: 'API-key length cannot be less than 5 characters',
+      },
+    },
+  },
   about: {
     changeLog: 'Changlog',
     updateNow: 'Update now',
@@ -316,7 +359,7 @@ const translation = {
   },
   datasetMenus: {
     documents: 'Documents',
-    hitTesting: 'Hit Testing',
+    hitTesting: 'Retrieval Testing',
     settings: 'Settings',
     emptyTip: 'The data set has not been associated, please go to the application or plug-in to complete the association.',
     viewDoc: 'View documentation',
@@ -343,6 +386,67 @@ const translation = {
     conversationName: 'Conversation name',
     conversationNamePlaceholder: 'Please input conversation name',
     conversationNameCanNotEmpty: 'Conversation name required',
+    citation: {
+      title: 'CITATIONS',
+      linkToDataset: 'Link to dataset',
+      characters: 'Characters:',
+      hitCount: 'Retrieval count:',
+      vectorHash: 'Vector hash:',
+      hitScore: 'Retrieval Score:',
+    },
+  },
+  promptEditor: {
+    placeholder: 'Write your prompt word here, enter \'{\' to insert a variable, enter \'/\' to insert a prompt content block',
+    context: {
+      item: {
+        title: 'Context',
+        desc: 'Insert context template',
+      },
+      modal: {
+        title: '{{num}} Datasets in Context',
+        add: 'Add Context ',
+        footer: 'You can manage contexts in the Context section below.',
+      },
+    },
+    history: {
+      item: {
+        title: 'Conversation History',
+        desc: 'Insert historical message template',
+      },
+      modal: {
+        title: 'EXAMPLE',
+        user: 'Hello',
+        assistant: 'Hello! How can I assist you today?',
+        edit: 'Edit Conversation Role Names',
+      },
+    },
+    variable: {
+      item: {
+        title: 'Variables & External Tools',
+        desc: 'Insert Variables & External Tools',
+      },
+      modal: {
+        add: 'New variable',
+        addTool: 'New tool',
+      },
+    },
+    query: {
+      item: {
+        title: 'Query',
+        desc: 'Insert user query template',
+      },
+    },
+    existed: 'Already exists in the prompt',
+  },
+  imageUploader: {
+    uploadFromComputer: 'Upload from Computer',
+    uploadFromComputerReadError: 'Image reading failed, please try again.',
+    uploadFromComputerUploadError: 'Image upload failed, please upload again.',
+    uploadFromComputerLimit: 'Upload images cannot exceed {{size}} MB',
+    pasteImageLink: 'Paste image link',
+    pasteImageLinkInputPlaceholder: 'Paste image link here',
+    pasteImageLinkInvalid: 'Invalid image link',
+    imageUpload: 'Image Upload',
   },
 }
 

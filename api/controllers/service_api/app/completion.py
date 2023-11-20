@@ -27,9 +27,12 @@ class CompletionApi(AppApiResource):
 
         parser = reqparse.RequestParser()
         parser.add_argument('inputs', type=dict, required=True, location='json')
-        parser.add_argument('query', type=str, location='json')
+        parser.add_argument('query', type=str, location='json', default='')
+        parser.add_argument('files', type=list, required=False, location='json')
         parser.add_argument('response_mode', type=str, choices=['blocking', 'streaming'], location='json')
         parser.add_argument('user', type=str, location='json')
+        parser.add_argument('retriever_from', type=str, required=False, default='dev', location='json')
+
         args = parser.parse_args()
 
         streaming = args['response_mode'] == 'streaming'
@@ -37,13 +40,15 @@ class CompletionApi(AppApiResource):
         if end_user is None and args['user'] is not None:
             end_user = create_or_update_end_user_for_user_id(app_model, args['user'])
 
+        args['auto_generate_name'] = False
+
         try:
             response = CompletionService.completion(
                 app_model=app_model,
                 user=end_user,
                 args=args,
                 from_source='api',
-                streaming=streaming
+                streaming=streaming,
             )
 
             return compact_response(response)
@@ -88,9 +93,13 @@ class ChatApi(AppApiResource):
         parser = reqparse.RequestParser()
         parser.add_argument('inputs', type=dict, required=True, location='json')
         parser.add_argument('query', type=str, required=True, location='json')
+        parser.add_argument('files', type=list, required=False, location='json')
         parser.add_argument('response_mode', type=str, choices=['blocking', 'streaming'], location='json')
         parser.add_argument('conversation_id', type=uuid_value, location='json')
         parser.add_argument('user', type=str, location='json')
+        parser.add_argument('retriever_from', type=str, required=False, default='dev', location='json')
+        parser.add_argument('auto_generate_name', type=bool, required=False, default='True', location='json')
+
         args = parser.parse_args()
 
         streaming = args['response_mode'] == 'streaming'
@@ -179,4 +188,3 @@ api.add_resource(CompletionApi, '/completion-messages')
 api.add_resource(CompletionStopApi, '/completion-messages/<string:task_id>/stop')
 api.add_resource(ChatApi, '/chat-messages')
 api.add_resource(ChatStopApi, '/chat-messages/<string:task_id>/stop')
-

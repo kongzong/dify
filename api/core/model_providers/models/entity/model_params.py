@@ -17,7 +17,7 @@ class ModelType(enum.Enum):
     IMAGE = 'image'
     VIDEO = 'video'
     MODERATION = 'moderation'
-
+    RERANKING = 'reranking'
     @staticmethod
     def value_of(value):
         for member in ModelType:
@@ -49,6 +49,7 @@ class KwargRule(Generic[T], BaseModel):
     max: Optional[T] = None
     default: Optional[T] = None
     alias: Optional[str] = None
+    precision: Optional[int] = None
 
 
 class ModelKwargsRules(BaseModel):

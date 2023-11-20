@@ -1,5 +1,5 @@
 import type { Annotation, MessageRating } from '@/models/log'
-
+import type { VisionFile } from '@/types/app'
 export type MessageMore = {
   time: string
   tokens: number
@@ -23,10 +23,26 @@ export type ThoughtItem = {
   tool_input: string
   message_id: string
 }
+export type CitationItem = {
+  content: string
+  data_source_type: string
+  dataset_name: string
+  dataset_id: string
+  document_id: string
+  document_name: string
+  hit_count: number
+  index_node_hash: string
+  segment_id: string
+  segment_position: number
+  score: number
+  word_count: number
+}
+
 export type IChatItem = {
   id: string
   content: string
   agent_thoughts?: ThoughtItem[]
+  citation?: CitationItem[]
   /**
    * Specific message type
    */
@@ -50,4 +66,18 @@ export type IChatItem = {
   annotation?: Annotation
   useCurrentUserAvatar?: boolean
   isOpeningStatement?: boolean
+  log?: { role: string; text: string }[]
+  message_files?: VisionFile[]
+}
+
+export type MessageEnd = {
+  id: string
+  retriever_resources?: CitationItem[]
+}
+
+export type MessageReplace = {
+  id: string
+  task_id: string
+  answer: string
+  conversation_id: string
 }

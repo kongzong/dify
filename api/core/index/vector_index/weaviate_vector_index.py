@@ -1,4 +1,4 @@
-from typing import Optional, cast
+from typing import Optional, cast, Any, List
 
 import requests
 import weaviate
@@ -26,6 +26,7 @@ class WeaviateConfig(BaseModel):
 
 
 class WeaviateVectorIndex(BaseVectorIndex):
+
     def __init__(self, dataset: Dataset, config: WeaviateConfig, embeddings: Embeddings):
         super().__init__(dataset, embeddings)
         self._client = self._init_client(config)
@@ -91,6 +92,20 @@ class WeaviateVectorIndex(BaseVectorIndex):
 
         return self
 
+    def create_with_collection_name(self, texts: list[Document], collection_name: str, **kwargs) -> BaseIndex:
+        uuids = self._get_uuids(texts)
+        self._vector_store = WeaviateVectorStore.from_documents(
+            texts,
+            self._embeddings,
+            client=self._client,
+            index_name=self.get_index_name(self.dataset),
+            uuids=uuids,
+            by_text=False
+        )
+
+        return self
+
+
     def _get_vector_store(self) -> VectorStore:
         """Only for created index."""
         if self._vector_store:
@@ -134,3 +149,9 @@ class WeaviateVectorIndex(BaseVectorIndex):
                 return True
 
         return False
+
+    def search_by_full_text_index(self, query: str, **kwargs: Any) -> List[Document]:
+        vector_store = self._get_vector_store()
+        vector_store = cast(self._get_vector_store_class(), vector_store)
+        return vector_store.similarity_search_by_bm25(query, kwargs.get('top_k', 2), **kwargs)
+
