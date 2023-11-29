@@ -65,7 +65,7 @@ const translation = {
         'How much to penalize new tokens based on their existing frequency in the text so far.\nDecreases the model\'s likelihood to repeat the same line verbatim.',
       max_tokens: 'Max token',
       max_tokensTip:
-        'Used to limit the maximum length of the reply, in tokens. \nLarger values may limit the space left for prompt words, chat logs, and data sets. \nIt is recommended to set it below two-thirds.',
+        'Used to limit the maximum length of the reply, in tokens. \nLarger values may limit the space left for prompt words, chat logs, and Knowledge. \nIt is recommended to set it below two-thirds.',
       maxTokenSettingTip: 'Your max token setting is high, potentially limiting space for prompts, queries, and data. Consider setting it below 2/3.',
       setToCurrentModelMaxTokenTip: 'Max token is updated to the 80% maximum token of the current model {{maxToken}}.',
       stop_sequences: 'Stop sequences',
@@ -86,10 +86,10 @@ const translation = {
     apps: 'Build Apps',
     plugins: 'Plugins',
     pluginsTips: 'Integrate third-party plugins or create ChatGPT-compatible AI-Plugins.',
-    datasets: 'Datasets',
+    datasets: 'Knowledge',
     datasetsTips: 'COMING SOON: Import your own text data or write data in real-time via Webhook for LLM context enhancement.',
     newApp: 'New App',
-    newDataset: 'Create dataset',
+    newDataset: 'Create Knowledge',
   },
   userProfile: {
     settings: 'Settings',
@@ -223,6 +223,7 @@ const translation = {
     },
   },
   modelProvider: {
+    notConfigured: 'The system model has not yet been fully configured, and some functions may be unavailable.',
     systemModelSettings: 'System Model Settings',
     systemModelSettingsLink: 'Why is it necessary to set up a system model?',
     selectModel: 'Select your model',
@@ -233,7 +234,7 @@ const translation = {
     },
     embeddingModel: {
       key: 'Embedding Model',
-      tip: 'Set the default model for document embedding processing of the dataset, both retrieval and import of the dataset use this Embedding model for vectorization processing. Switching will cause the vector dimension between the imported dataset and the question to be inconsistent, resulting in retrieval failure. To avoid retrieval failure, please do not switch this model at will.',
+      tip: 'Set the default model for document embedding processing of the Knowledge, both retrieval and import of the Knowledge use this Embedding model for vectorization processing. Switching will cause the vector dimension between the imported Knowledge and the question to be inconsistent, resulting in retrieval failure. To avoid retrieval failure, please do not switch this model at will.',
     },
     speechToTextModel: {
       key: 'Speech-to-Text Model',
@@ -252,6 +253,7 @@ const translation = {
       tip: 'This model has been removed. Please add a model or select another model.',
       emptyTip: 'No available models',
       emptySetting: 'Please go to settings to configure',
+      rerankTip: 'Please set up the Rerank model',
     },
     card: {
       quota: 'QUOTA',
@@ -284,7 +286,7 @@ const translation = {
     connect: 'Connect',
     notion: {
       title: 'Notion',
-      description: 'Using Notion as a data source for the dataset.',
+      description: 'Using Notion as a data source for the Knowledge.',
       connectedWorkspace: 'Connected workspace',
       addWorkspace: 'Add workspace',
       connected: 'Connected',
@@ -361,7 +363,7 @@ const translation = {
     documents: 'Documents',
     hitTesting: 'Retrieval Testing',
     settings: 'Settings',
-    emptyTip: 'The data set has not been associated, please go to the application or plug-in to complete the association.',
+    emptyTip: 'The Knowledge has not been associated, please go to the application or plug-in to complete the association.',
     viewDoc: 'View documentation',
     relatedApp: 'linked apps',
   },
@@ -388,7 +390,7 @@ const translation = {
     conversationNameCanNotEmpty: 'Conversation name required',
     citation: {
       title: 'CITATIONS',
-      linkToDataset: 'Link to dataset',
+      linkToDataset: 'Link to Knowledge',
       characters: 'Characters:',
       hitCount: 'Retrieval count:',
       vectorHash: 'Vector hash:',
@@ -403,7 +405,7 @@ const translation = {
         desc: 'Insert context template',
       },
       modal: {
-        title: '{{num}} Datasets in Context',
+        title: '{{num}} Knowledge in Context',
         add: 'Add Context ',
         footer: 'You can manage contexts in the Context section below.',
       },
